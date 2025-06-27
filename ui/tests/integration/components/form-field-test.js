@@ -6,7 +6,7 @@
 import EmberObject from '@ember/object';
 import { module, test } from 'qunit';
 import { setupRenderingTest } from 'ember-qunit';
-import { render, click, fillIn, findAll } from '@ember/test-helpers';
+import { render, click, fillIn, findAll, setupOnerror } from '@ember/test-helpers';
 import hbs from 'htmlbars-inline-precompile';
 import { create } from 'ember-cli-page-object';
 import sinon from 'sinon';
@@ -46,6 +46,61 @@ module('Integration | Component | form field', function (hooks) {
     await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} />`);
     assert.strictEqual(component.fields.objectAt(0).labelValue, 'Foo', 'renders a label');
     assert.notOk(component.hasInput, 'renders only the label');
+  });
+
+  test('it throws an error when @attr does not include a "name" key', async function (assert) {
+    assert.expect(1);
+    this.model = EmberObject.create({});
+    this.attr = { options: { fieldValue: 'foo' } };
+    setupOnerror((error) => {
+      assert.strictEqual(
+        error.message,
+        'Assertion Failed: @name is required',
+        'throws assertion error when @attr does not include a "name" key'
+      );
+    });
+    await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} />`);
+  });
+
+  test('it throws an error when @model is not present', async function (assert) {
+    assert.expect(1);
+    this.attr = { name: 'foo' };
+    setupOnerror((error) => {
+      assert.strictEqual(
+        error.message,
+        'Assertion Failed: @model (or resource object being updated) is required',
+        'throws assertion error when @model arg does not exist'
+      );
+    });
+    await render(hbs`<FormField @attr={{this.attr}} />`);
+  });
+
+  test('it throws an error when "name" is "ID"', async function (assert) {
+    assert.expect(1);
+    this.model = EmberObject.create({});
+    this.attr = { name: 'id' };
+    setupOnerror((error) => {
+      assert.strictEqual(
+        error.message,
+        'Assertion Failed: Form is attempting to modify an ID. Ember-data does not allow this.',
+        'throws assertion error when component attempts to modify an ID'
+      );
+    });
+    await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} />`);
+  });
+
+  test('it throws an error when "fieldValue" is "ID"', async function (assert) {
+    assert.expect(1);
+    this.model = EmberObject.create({});
+    this.attr = { name: 'foo', options: { fieldValue: 'id' } };
+    setupOnerror((error) => {
+      assert.strictEqual(
+        error.message,
+        'Assertion Failed: Form is attempting to modify an ID. Ember-data does not allow this.',
+        'throws assertion error when component attempts to modify an ID'
+      );
+    });
+    await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} />`);
   });
 
   // ------------------
@@ -98,38 +153,51 @@ module('Integration | Component | form field', function (hooks) {
     assert.ok(component.hasJSONClearButton, 'renders button that will clear the JSON value');
   });
 
-  test('it renders: editType textarea', async function (assert) {
-    const [model, spy] = await setup.call(
-      this,
-      createAttr('foo', 'string', { defaultValue: 'goodbye', editType: 'textarea' })
-    );
-    assert.strictEqual(component.fields.objectAt(0).labelValue, 'Foo', 'renders a label');
-    assert.ok(component.hasTextarea, 'renders a textarea');
-    assert.strictEqual(component.fields.objectAt(0).textareaValue, 'goodbye', 'renders default value');
-    await component.fields.objectAt(0).textarea('hello');
-
-    assert.strictEqual(model.get('foo'), 'hello');
-    assert.ok(spy.calledWith('foo', 'hello'), 'onChange called with correct args');
-  });
-
   test('it renders: toggleButton', async function (assert) {
     const [model, spy] = await setup.call(
       this,
-      createAttr('foobar', 'toggleButton', {
+      createAttr('foobar', 'boolean', {
         defaultValue: false,
         editType: 'toggleButton',
         helperTextEnabled: 'Toggled on',
         helperTextDisabled: 'Toggled off',
       })
     );
-    assert.ok(component.hasToggleButton, 'renders a toggle button');
-    assert.dom('[data-test-toggle-input]').isNotChecked();
+    assert.dom(GENERAL.toggleInput('toggle-foobar')).exists('Toggle button exists');
+    assert.dom(GENERAL.toggleInput('toggle-foobar')).isNotChecked();
     assert.dom('[data-test-toggle-subtext]').hasText('Toggled off');
 
-    await component.fields.objectAt(0).toggleButton();
+    await click(GENERAL.toggleInput('toggle-foobar'));
 
     assert.true(model.get('foobar'));
     assert.ok(spy.calledWith('foobar', true), 'onChange called with correct args');
+  });
+
+  test('it sets nested attribute value for toggleButton', async function (assert) {
+    this.setProperties({
+      attr: createAttr('config.foo', 'boolean', {
+        editType: 'toggleButton',
+        defaultValue: false,
+      }),
+      model: { config: { foo: true } },
+      onChange: () => {},
+    });
+    await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} @onChange={{this.onChange}} />`);
+    assert.dom(GENERAL.toggleInput('toggle-config.foo')).isChecked();
+  });
+
+  test('it sets nested attribute value for optionalText', async function (assert) {
+    this.setProperties({
+      attr: createAttr('foo.bar', 'string', {
+        editType: 'optionalText',
+        defaultValue: 'lemon',
+      }),
+      model: { foo: { bar: 'apple' } },
+      onChange: () => {},
+    });
+    await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} @onChange={{this.onChange}} />`);
+    assert.dom(GENERAL.toggleInput('show-foo.bar')).isChecked();
+    assert.dom(GENERAL.inputByAttr('foo.bar')).hasValue('apple');
   });
 
   test('it renders: editType file', async function (assert) {
@@ -161,16 +229,16 @@ module('Integration | Component | form field', function (hooks) {
         helperTextEnabled: 'TTL is enabled',
       })
     );
-    assert.ok(component.hasTTLPicker, 'renders the ttl-picker component');
+    assert.dom(GENERAL.toggleInput('Foo')).exists('renders the ttl-picker component');
     assert.dom('[data-test-ttl-form-subtext]').hasText('TTL is disabled');
     assert.dom('[data-test-ttl-toggle]').isNotChecked();
-    await component.fields.objectAt(0).toggleTtl();
+    await click(GENERAL.toggleInput('Foo'));
     await component.fields.objectAt(0).select('h').change();
     await component.fields.objectAt(0).ttlTime('3');
     const expectedSeconds = `${3 * 3600}s`;
     assert.strictEqual(model.get('foo'), expectedSeconds);
     assert.ok(spy.calledWith('foo', expectedSeconds), 'onChange called with correct args');
-    await component.fields.objectAt(0).toggleTtl();
+    await click(GENERAL.toggleInput('Foo'));
     assert.ok(spy.calledWith('foo', '0'), 'onChange called with 0 when toggle off');
   });
 
@@ -183,9 +251,9 @@ module('Integration | Component | form field', function (hooks) {
         ttlOffValue: '',
       })
     );
-    assert.ok(component.hasTTLPicker, 'renders the ttl-picker component');
+    assert.dom(GENERAL.toggleInput('Foo')).exists('renders the ttl-picker component');
     assert.dom('[data-test-ttl-toggle]').isChecked();
-    await component.fields.objectAt(0).toggleTtl();
+    await click(GENERAL.toggleInput('Foo'));
     assert.strictEqual(model.get('foo'), '');
     assert.ok(spy.calledWith('foo', ''), 'onChange called with correct args');
   });
@@ -264,7 +332,7 @@ module('Integration | Component | form field', function (hooks) {
 
     await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} @onChange={{this.onChange}} />`);
     assert
-      .dom('[data-test-toggle-input="Foo"]')
+      .dom(GENERAL.toggleInput('Foo'))
       .isNotChecked('Toggle is initially unchecked when given default value');
     assert.dom('[data-test-ttl-picker-group="Foo"]').doesNotExist('Ttl input is hidden');
   });
@@ -279,7 +347,7 @@ module('Integration | Component | form field', function (hooks) {
     });
 
     await render(hbs`<FormField @attr={{this.attr}} @model={{this.model}} @onChange={{this.onChange}} />`);
-    assert.dom('[data-test-toggle-input="Foo"]').isChecked('Toggle is initially checked when given value');
+    assert.dom(GENERAL.toggleInput('Foo')).isChecked('Toggle is initially checked when given value');
     assert.dom('[data-test-ttl-value="Foo"]').hasValue('1', 'Ttl input displays with correct value');
   });
 
@@ -859,6 +927,105 @@ module('Integration | Component | form field', function (hooks) {
   test('it renders: editType=password / type=string - with validation errors and warnings', async function (assert) {
     this.setProperties({
       attr: createAttr('myfield', 'string', { editType: 'password' }),
+      model: { myfield: 'bar' },
+      modelValidations: {
+        myfield: {
+          isValid: false,
+          errors: ['Error message #1', 'Error message #2'],
+          warnings: ['Warning message #1', 'Warning message #2'],
+        },
+      },
+      onChange: () => {},
+    });
+
+    await render(
+      hbs`<FormField @attr={{this.attr}} @model={{this.model}} @modelValidations={{this.modelValidations}} @onChange={{this.onChange}} />`
+    );
+    assert
+      .dom(GENERAL.validationErrorByAttr('myfield'))
+      .exists('Validation error renders')
+      .hasText('Error message #1 Error message #2', 'Validation errors are combined');
+    assert
+      .dom(GENERAL.validationWarningByAttr('myfield'))
+      .exists('Validation warning renders')
+      .hasText('Warning message #1 Warning message #2', 'Validation warnings are combined');
+  });
+
+  // ––––– editType === 'textarea' –––––
+
+  test('it renders: editType=textarea / type=string - as Hds::Form::Textarea', async function (assert) {
+    const [model, spy] = await setup.call(
+      this,
+      createAttr('myfield', 'string', { editType: 'textarea', defaultValue: 'default' })
+    );
+    assert
+      .dom('.field [class^="hds-form-field"] textarea.hds-form-textarea')
+      .exists('renders as Hds::Form::Textarea');
+    assert
+      .dom(`textarea`)
+      .exists('renders textarea')
+      .hasAttribute('data-test-input', 'myfield', 'textarea has correct `data-test-input` attribute');
+    assert.dom(GENERAL.fieldLabel()).hasText('Myfield', 'renders the input label');
+    assert.dom(GENERAL.inputByAttr('myfield')).hasValue('default', 'renders default value');
+    await fillIn(GENERAL.inputByAttr('myfield'), 'bar');
+    assert.strictEqual(model.get('myfield'), 'bar');
+    assert.true(spy.calledWith('myfield', 'bar'), 'onChange called with correct args');
+  });
+
+  test('it renders: editType=textarea / type=number - as Hds::Form::Textarea', async function (assert) {
+    const [model, spy] = await setup.call(
+      this,
+      createAttr('myfield', 'number', { editType: 'textarea', defaultValue: 123 })
+    );
+    assert
+      .dom('.field [class^="hds-form-field"] textarea.hds-form-textarea')
+      .exists('renders as Hds::Form::Textarea');
+    assert
+      .dom(`textarea`)
+      .exists('renders textarea')
+      .hasAttribute('data-test-input', 'myfield', 'textarea has correct `data-test-input` attribute');
+    assert.dom(GENERAL.fieldLabel()).hasText('Myfield', 'renders the input label');
+    assert.dom(GENERAL.inputByAttr('myfield')).hasValue('123', 'renders default value');
+    await fillIn(GENERAL.inputByAttr('myfield'), 'bar');
+    assert.strictEqual(model.get('myfield'), 'bar');
+    assert.true(spy.calledWith('myfield', 'bar'), 'onChange called with correct args');
+  });
+
+  test('it renders: editType=textarea / type=string - with passed docLink, helpText, label, placeholder, subText', async function (assert) {
+    await setup.call(
+      this,
+      createAttr('myfield', 'string', {
+        editType: 'textarea',
+        docLink: '/docs',
+        helpText: 'Some helpText',
+        label: 'Custom label',
+        placeholder: 'Custom placeholder',
+        subText: 'Some subText',
+      })
+    );
+    assert.dom(GENERAL.fieldLabel()).hasText('Custom label', 'renders the custom label from options');
+    assert
+      .dom(GENERAL.inputByAttr('myfield'))
+      .hasAttribute('placeholder', 'Custom placeholder', 'renders the placeholder from options');
+    assert
+      .dom(GENERAL.helpTextByAttr('Some subText'))
+      .exists('renders `subText` option as HelperText')
+      .hasText(
+        'Some subText See our documentation for help.',
+        'renders the right subText string from options'
+      );
+    assert
+      .dom(`${GENERAL.helpTextByAttr('Some subText')} ${GENERAL.docLinkByAttr('/docs')}`)
+      .exists('renders `docLink` option as as link inside the subText');
+    assert
+      .dom(GENERAL.helpTextByAttr('Some helpText'))
+      .exists('renders `helpText` option as HelperText')
+      .hasText('Some helpText', 'renders the right help text string from options');
+  });
+
+  test('it renders: editType=textarea / type=string - with validation errors and warnings', async function (assert) {
+    this.setProperties({
+      attr: createAttr('myfield', 'string', { editType: 'textarea' }),
       model: { myfield: 'bar' },
       modelValidations: {
         myfield: {
