@@ -8321,3 +8321,7 @@ func TestBackend_IDNWithWildcards_AltNames(t *testing.T) {
 		})
 	}
 }
+
+func stringSliceContainsAny(sl []string, substr string) bool {
+	return slices.ContainsFunc(sl, func(s string) bool { return strings.Contains(s, substr) })
+}
