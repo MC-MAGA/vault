@@ -43,7 +43,7 @@ importers:
         version: 3.0.0
       '@hashicorp/vault-client-typescript':
         specifier: github:hashicorp/vault-client-typescript
-        version: https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/60bb6874db564c66c63aadd929f348502d0f46ee
+        version: https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/dc6b0cae9bbd1a1272242e403cfa3be80c4cc418
       ember-auto-import:
         specifier: 2.10.0
         version: 2.10.0(@glint/template@1.7.3)(webpack@5.105.4)
@@ -1600,8 +1600,8 @@ packages:
   '@hashicorp/flight-icons@3.14.0':
     resolution: {integrity: sha512-nyLDApaZsAHpAf2sRNwYX1MnJQU9UI3euiwE6wHPl2l/+Yt8wba1oXkmWL/Ptc4QgJxxnRUUhf66jGcB/AIOyQ==}
 
-  '@hashicorp/vault-client-typescript@https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/60bb6874db564c66c63aadd929f348502d0f46ee':
-    resolution: {tarball: https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/60bb6874db564c66c63aadd929f348502d0f46ee}
+  '@hashicorp/vault-client-typescript@https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/dc6b0cae9bbd1a1272242e403cfa3be80c4cc418':
+    resolution: {tarball: https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/dc6b0cae9bbd1a1272242e403cfa3be80c4cc418}
     version: 0.0.0
 
   '@humanwhocodes/config-array@0.13.0':
@@ -2081,6 +2081,9 @@ packages:
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
+
+  '@types/estree@1.0.9':
+    resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
   '@types/express-serve-static-core@4.19.6':
     resolution: {integrity: sha512-N4LZ2xG7DatVqhCZzOGb1Yi5lMbXSZcmdLDe9EzSndPV2HpWYWzRbaerl2n27irrm94EPpprqa8KpskPT085+A==}
@@ -11259,7 +11262,7 @@ snapshots:
 
   '@hashicorp/flight-icons@3.14.0': {}
 
-  '@hashicorp/vault-client-typescript@https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/60bb6874db564c66c63aadd929f348502d0f46ee': {}
+  '@hashicorp/vault-client-typescript@https://codeload.github.com/hashicorp/vault-client-typescript/tar.gz/dc6b0cae9bbd1a1272242e403cfa3be80c4cc418': {}
 
   '@humanwhocodes/config-array@0.13.0':
     dependencies:
@@ -11882,10 +11885,12 @@ snapshots:
 
   '@types/eslint@8.56.12':
     dependencies:
-      '@types/estree': 1.0.8
+      '@types/estree': 1.0.9
       '@types/json-schema': 7.0.15
 
   '@types/estree@1.0.8': {}
+
+  '@types/estree@1.0.9': {}
 
   '@types/express-serve-static-core@4.19.6':
     dependencies:
