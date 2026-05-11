@@ -105,7 +105,7 @@
         {{/if}}
         {{! dynamically render template from modal-form/ folder}}
         {{! form must receive an @onSave and @onCancel arg that executes the callback}}
-        {{component @modalFormTemplate nameInput=this.nameInput onSave=this.resetModal onCancel=this.resetModal}}
+        {{component @modalFormTemplate nameInput=this.nameInput onSave=this.onSave onCancel=this.resetModal}}
       </M.Body>
     </Hds::Modal>
   {{/if}}

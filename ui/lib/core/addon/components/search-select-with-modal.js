@@ -197,14 +197,16 @@ export default class SearchSelectWithModal extends Component {
   // -----
 
   @action
-  resetModal(model) {
+  onSave({ name }) {
+    this.selectedOptions = addToArray(this.selectedOptions, { name, id: name });
+    this.handleChange();
+    this.resetModal();
+  }
+
+  @action
+  resetModal() {
     // resetModal fires when the form component calls onSave or onCancel
     this.showModal = false;
-    if (model && model.currentState.isSaved) {
-      const { name } = model;
-      this.selectedOptions = addToArray(this.selectedOptions, { name, id: name });
-      this.handleChange();
-    }
     this.nameInput = null;
   }
 }
