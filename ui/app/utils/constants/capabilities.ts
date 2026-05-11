@@ -38,6 +38,7 @@ export const PATH_MAP = {
   ldapRotateStaticRole: apiPath`${'backend'}/rotate-role/${'name'}`,
   ldapStaticRole: apiPath`${'backend'}/static-role/${'name'}`,
   ldapStaticRoleCreds: apiPath`${'backend'}/static-cred/${'name'}`,
+  oidcAssignment: apiPath`identity/oidc/assignment/${'name'}`,
   oidcClient: apiPath`identity/oidc/client/${'name'}`,
   oidcKey: apiPath`identity/oidc/key/${'name'}`,
   oidcKeyRotate: apiPath`identity/oidc/key/${'name'}/rotate`,

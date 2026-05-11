@@ -5,8 +5,7 @@
 
 import Component from '@glimmer/component';
 import { action } from '@ember/object';
-import { service } from '@ember/service';
-import { tracked } from '@glimmer/tracking';
+import OidcKeyForm from 'vault/forms/oidc/key';
 
 /**
  * @module ModalForm::OidcKeyTemplate
@@ -25,17 +24,13 @@ import { tracked } from '@glimmer/tracking';
  */
 
 export default class OidcKeyTemplate extends Component {
-  @service store;
-  @tracked key = null; // model record passed to oidc/key-form
-
   constructor() {
     super(...arguments);
-    this.key = this.store.createRecord('oidc/key', { name: this.args.nameInput });
+    this.form = new OidcKeyForm({ name: this.args.nameInput }, { isNew: true });
   }
 
-  @action onSave(keyModel) {
-    this.args.onSave(keyModel);
-    // Reset component key for next use
-    this.key = null;
+  @action onSave(form) {
+    this.args.onSave(form);
+    this.form = null;
   }
 }

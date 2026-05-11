@@ -17,7 +17,6 @@ import fm from 'vault/tests/pages/components/flash-message';
 import {
   OIDC_BASE_URL, // -> '/vault/access/oidc'
   SELECTORS,
-  clearRecord,
   CLIENT_LIST_RESPONSE,
   CLIENT_DATA_RESPONSE,
   ASSIGNMENT_LIST_RESPONSE,
@@ -204,7 +203,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
       });
 
       //* clear out test state
-      await this.api.identity.oidcDeleteKey('test-key');
+      await Promise.allSettled([this.api.identity.oidcDeleteKey('test-key')]);
 
       // create a new key
       await visit(OIDC_BASE_URL + '/keys/create');
@@ -344,7 +343,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
       assert.expect(3);
 
       //* clear out test state
-      await clearRecord(this.store, 'oidc/assignment', 'test-assignment');
+      await Promise.allSettled([this.api.identity.oidcDeleteAssignment('test-assignment')]);
 
       await visit(OIDC_BASE_URL + '/assignments');
       assert.strictEqual(currentURL(), '/vault/access/oidc/assignments');
@@ -374,7 +373,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
       await Promise.allSettled([
         this.api.identity.oidcDeleteClient('test-app'),
         this.api.identity.oidcDeleteClient('my-webapp'),
-        clearRecord(this.store, 'oidc/assignment', 'assignment-inline'),
+        this.api.identity.oidcDeleteAssignment('assignment-inline'),
       ]);
 
       // create a client with allow all access
@@ -503,7 +502,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
       //);
 
       //* clean up test state
-      await clearRecord(this.store, 'oidc/assignment', 'assignment-inline');
+      await Promise.allSettled([this.api.identity.oidcDeleteAssignment('assignment-inline')]);
     });
 
     test('it creates, updates, and deletes an assignment', async function (assert) {
@@ -511,7 +510,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
       await visit(OIDC_BASE_URL + '/assignments');
 
       //* ensure clean test state
-      await clearRecord(this.store, 'oidc/assignment', 'test-assignment');
+      await Promise.allSettled([this.api.identity.oidcDeleteAssignment('test-assignment')]);
 
       // create a new assignment
       await click(SELECTORS.assignmentCreateButton);
@@ -635,7 +634,7 @@ module('Acceptance | oidc-config clients', function (hooks) {
         overrideResponse(null, { data: ASSIGNMENT_DATA_RESPONSE })
       );
       this.server.post('/sys/capabilities-self', () =>
-        capabilitiesStub('/identity/oidc/assignment/test-assignment', ['read'])
+        capabilitiesStub('identity/oidc/assignment/test-assignment', ['read'])
       );
 
       await visit(OIDC_BASE_URL + '/assignments');
