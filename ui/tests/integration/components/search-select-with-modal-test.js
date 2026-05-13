@@ -164,12 +164,11 @@ module('Integration | Component | search select with modal', function (hooks) {
 
   test('it renders policy template and selects policy type', async function (assert) {
     assert.expect(9);
-    this.server.put('/sys/policies/acl/acl-test-new', async (schema, req) => {
+    this.server.post('/sys/policies/acl/acl-test-new', async (schema, req) => {
       const requestBody = JSON.parse(req.requestBody);
       assert.propEqual(
         requestBody,
         {
-          name: 'acl-test-new',
           policy: 'path "secret/super-secret" { capabilities = ["deny"] }',
         },
         'onSave sends request to endpoint with correct policy attributes'

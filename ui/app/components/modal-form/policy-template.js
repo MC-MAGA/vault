@@ -7,6 +7,7 @@ import Component from '@glimmer/component';
 import { action } from '@ember/object';
 import { service } from '@ember/service';
 import { tracked } from '@glimmer/tracking';
+import PolicyForm from 'vault/forms/policy';
 
 /**
  * @module ModalForm::PolicyTemplate
@@ -27,8 +28,7 @@ import { tracked } from '@glimmer/tracking';
 export default class PolicyTemplate extends Component {
   @service store;
   @service version;
-
-  @tracked policy = null; // model record passed to policy-form
+  @tracked form = null; // form class passed to policy-form
 
   get policyOptions() {
     return [
@@ -39,14 +39,17 @@ export default class PolicyTemplate extends Component {
 
   @action
   setPolicyType(type) {
-    if (this.policy) this.policy.unloadRecord(); // if user selects a different type, clear from store before creating a new record
-    // Create form model once type is chosen
-    this.policy = this.store.createRecord(`policy/${type}`, { name: this.args.nameInput });
+    // Create form once type is chosen
+    const policyForm = new PolicyForm(
+      { name: this.args.nameInput, enforcement_level: 'hard-mandatory' },
+      { isNew: true }
+    );
+    policyForm.policyType = type;
+    this.form = policyForm;
   }
-
   @action
-  onSave(policyModel) {
-    this.args.onSave(policyModel);
+  onSave(policyForm) {
+    this.args.onSave(policyForm);
     // Reset component policy for next use
     this.policy = null;
   }

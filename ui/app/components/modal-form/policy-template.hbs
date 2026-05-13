@@ -3,7 +3,7 @@
   SPDX-License-Identifier: BUSL-1.1
 }}
 
-{{#if this.policy.policyType}}
+{{#if this.form.policyType}}
   <Hds::Tabs as |T|>
     <T.Tab data-test-tab-your-policy>
       Your Policy
@@ -13,10 +13,10 @@
     </T.Tab>
 
     <T.Panel>
-      <PolicyForm @onSave={{this.onSave}} @model={{this.policy}} @onCancel={{@onCancel}} @isCompact={{true}} />
+      <PolicyForm @onSave={{this.onSave}} @form={{this.form}} @onCancel={{@onCancel}} @isCompact={{true}} />
     </T.Panel>
     <T.Panel class="has-top-padding-m">
-      <PolicyExample @policyType={{this.policy.policyType}} />
+      <PolicyExample @policyType={{this.form.policyType}} />
     </T.Panel>
   </Hds::Tabs>
 {{else}}
@@ -25,7 +25,7 @@
     @label="Type"
     @options={{this.policyOptions}}
     @isFullwidth={{true}}
-    @selectedValue={{this.policy.policyType}}
+    @selectedValue={{this.form.policyType}}
     @onChange={{this.setPolicyType}}
     @noDefault={{true}}
   />

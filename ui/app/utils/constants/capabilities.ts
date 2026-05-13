@@ -70,6 +70,7 @@ export const PATH_MAP = {
   pkiSignVerbatim: apiPath`${'backend'}/sign-verbatim/${'id'}`,
   pkiTidy: apiPath`${'backend'}/tidy`,
   pkiTidyStatus: apiPath`${'backend'}/tidy/status`,
+  policy: apiPath`sys/policies/${'policyType'}/${'id'}`,
   syncActivate: apiPath`sys/activation-flags/secrets-sync/activate`,
   syncDestination: apiPath`sys/sync/destinations/${'type'}/${'name'}`,
   syncRemoveAssociation: apiPath`sys/sync/destinations/${'type'}/${'name'}/associations/remove`,
