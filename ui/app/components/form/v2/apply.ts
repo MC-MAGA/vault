@@ -6,25 +6,20 @@
 import { action } from '@ember/object';
 import { service } from '@ember/service';
 import Component from '@glimmer/component';
-import { tracked } from '@glimmer/tracking';
 import { generateCurlCommand } from 'core/utils/code-generators/api';
 import { generateCliWriteCommand } from 'core/utils/code-generators/cli';
 import { terraformGenericResourceTemplate } from 'core/utils/code-generators/terraform';
+import { CreationMethod } from 'vault/utils/constants/snippet';
 
 import type V2Form from 'vault/forms/v2/v2-form';
 import type NamespaceService from 'vault/services/namespace';
+import type SnippetService from 'vault/services/snippet';
 
 interface Args {
   form: V2Form;
   onBack: () => void;
   onDone: () => void;
   onApply: () => void;
-}
-
-export enum CreationMethod {
-  TERRAFORM = 'Terraform automation',
-  APICLI = 'API/CLI',
-  UI = 'Vault UI workflow',
 }
 
 interface CreationMethodChoice {
@@ -36,9 +31,7 @@ interface CreationMethodChoice {
 
 export default class FormV2Apply extends Component<Args> {
   @service declare readonly namespace: NamespaceService;
-
-  @tracked creationMethodChoice = CreationMethod.TERRAFORM;
-  @tracked selectedTabIdx = 0;
+  @service declare readonly snippet: SnippetService;
 
   methods = CreationMethod;
 
@@ -63,6 +56,14 @@ export default class FormV2Apply extends Component<Args> {
         'Apply changes immediately. Note: Changes made in the UI will be overwritten by any future updates made via Infrastructure as Code (Terraform).',
     },
   ];
+
+  get creationMethodChoice() {
+    return this.snippet.creationMethodChoice;
+  }
+
+  get selectedTabIdx() {
+    return this.snippet.selectedTabIdx;
+  }
 
   get requestData() {
     const { payload } = this.args.form;
@@ -93,6 +94,11 @@ export default class FormV2Apply extends Component<Args> {
 
   @action
   onChange(choice: CreationMethodChoice) {
-    this.creationMethodChoice = choice.label;
+    this.snippet.setCreationMethod(choice.label, this.tfSnippet, this.customTabs);
+  }
+
+  @action
+  onTabChange(idx: number) {
+    this.snippet.setSelectedTab(idx, this.tfSnippet, this.customTabs);
   }
 }

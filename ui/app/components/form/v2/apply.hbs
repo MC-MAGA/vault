@@ -40,7 +40,7 @@
   </Hds::Text::Body>
   <Hds::Card::Container @hasBorder={{true}} class="has-top-padding-m has-bottom-padding-m side-padding-24">
     {{#if (eq this.creationMethodChoice this.methods.APICLI)}}
-      <CodeGenerator::AutomationSnippets @customTabs={{this.customTabs}} @onTabChange={{fn (mut this.selectedTabIdx)}} />
+      <CodeGenerator::AutomationSnippets @customTabs={{this.customTabs}} @onTabChange={{this.onTabChange}} />
     {{else}}
       <Hds::CodeBlock
         @language="hcl"

@@ -8,7 +8,7 @@ import { action } from '@ember/object';
 import { tracked } from '@glimmer/tracking';
 import Component from '@glimmer/component';
 import { SecurityPolicy } from 'vault/components/wizard/namespaces/step-1';
-import { CreationMethod } from 'vault/components/wizard/namespaces/step-3';
+import { CreationMethod } from 'vault/utils/constants/snippet';
 import { WIZARD_ID_MAP } from 'vault/utils/constants/wizard';
 
 import type ApiService from 'vault/services/api';
