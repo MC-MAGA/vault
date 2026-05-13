@@ -15,13 +15,14 @@ import {
   PolicyStanza,
   PolicyTypes,
 } from 'core/utils/code-generators/policy';
-import errorMessage from 'vault/utils/error-message';
 import { validate } from 'vault/utils/forms/validate';
 
 import type FlashMessageService from 'ember-cli-flash/services/flash-messages';
 import type { HTMLElementEvent } from 'vault/forms';
 import type { PolicyData } from 'core/components/code-generator/policy/builder';
-import type { FormField, ValidationMap, Validations } from 'vault/vault/app-types';
+import type { ValidationMap, Validations } from 'vault/vault/app-types';
+import ApiService from 'vault/services/api';
+import PolicyForm from 'vault/forms/policy';
 
 /**
  * @module PolicyForm
@@ -29,7 +30,7 @@ import type { FormField, ValidationMap, Validations } from 'vault/vault/app-type
  *
  * @example
  *  <PolicyForm
- *    @model={{this.model}}
+ *    @form={{this.form}}
  *    @onSave={{transition-to "vault.cluster.policy.show" this.model.policyType this.model.name}}
  *    @onCancel={{transition-to "vault.cluster.policies.index"}}
  *    @isCompact={{false}}
@@ -37,7 +38,7 @@ import type { FormField, ValidationMap, Validations } from 'vault/vault/app-type
  * ```
  * @callback onCancel - callback triggered when cancel button is clicked
  * @callback onSave - callback triggered when save button is clicked. Passes saved model
- * @param {object} model - ember data model from createRecord
+ * @param {object} form - policy form class
  * @param {boolean} isCompact - renders a compact version of the form component, such as when rendering in a modal (see policy-template.hbs)
  */
 
@@ -46,26 +47,17 @@ enum EditorTypes {
   VISUAL = 'visual',
 }
 
-interface PolicyModel {
-  name: string;
-  policy: string;
-  policyType: PolicyTypes;
-  isNew: boolean;
-  additionalAttrs?: FormField[]; // Only exist for "rgp" and "egp" policy types
-  save: () => Promise<void>;
-  unloadRecord: () => void;
-  rollbackAttributes: () => void;
-}
-
 interface Args {
   onCancel: () => void;
-  onSave: (model: PolicyModel) => void;
-  model: PolicyModel;
+  onSave: (model: PolicyForm['data']) => void;
+  form: PolicyForm;
+  policyType: PolicyTypes;
   isCompact?: boolean;
 }
 
 export default class PolicyFormComponent extends Component<Args> {
   @service declare readonly flashMessages: FlashMessageService;
+  @service declare readonly api: ApiService;
 
   editTypes = { [EditorTypes.VISUAL]: 'Visual editor', [EditorTypes.CODE]: 'Code editor' } as const;
   validations: Validations = {
@@ -90,7 +82,7 @@ export default class PolicyFormComponent extends Component<Args> {
   constructor(owner: unknown, args: Args) {
     super(owner, args);
     // Only ACL policies support the visual editor
-    this.editType = this.args.model.policyType === PolicyTypes.ACL ? EditorTypes.VISUAL : EditorTypes.CODE;
+    this.editType = this.args.form.policyType === PolicyTypes.ACL ? EditorTypes.VISUAL : EditorTypes.CODE;
   }
 
   // Template helpers
@@ -106,7 +98,7 @@ export default class PolicyFormComponent extends Component<Args> {
   }
 
   get hasPolicyDiff() {
-    const { policy } = this.args.model;
+    const { policy } = this.args.form.data;
     // Make sure policy has a value (if it's undefined, neither editor has been used)
     // Return true if there is a difference between stanzas and policy arg
     // which means the user has made changes using the code editor
@@ -114,14 +106,14 @@ export default class PolicyFormComponent extends Component<Args> {
   }
 
   get snippetArgs() {
-    const policyName = this.args.model.name || '<policy name>';
+    const policyName = this.args.form.data.name || '<policy name>';
     const policy = this.formattedStanzas;
     return policySnippetArgs(policyName, policy);
   }
 
   get visualEditorSupported() {
-    const { model, isCompact } = this.args;
-    return model.isNew && model.policyType === PolicyTypes.ACL && !isCompact;
+    const { form, isCompact } = this.args;
+    return form.isNew && form.policyType === PolicyTypes.ACL && !isCompact;
   }
 
   @action
@@ -185,29 +177,51 @@ export default class PolicyFormComponent extends Component<Args> {
       // Abort saving
       return;
     }
-
     try {
-      const { name, policyType, isNew } = this.args.model;
-      yield this.args.model.save();
+      const policyType = this.args.form.policyType;
+      const { data } = this.args.form.toJSON();
+      // remove enforcement from acl
+      if (policyType === 'acl') {
+        delete data.enforcement_level;
+      }
+
+      if (policyType === 'acl') {
+        yield this.api.sys.policiesWriteAclPolicy(data.name, { policy: data.policy });
+      } else if (policyType === 'egp') {
+        yield this.api.sys.systemWritePoliciesEgpName(data.name, {
+          policy: data.policy,
+          enforcement_level: data.enforcement_level,
+          paths: data.paths,
+        });
+      } else {
+        yield this.api.sys.systemWritePoliciesRgpName(data.name, {
+          policy: data.policy,
+          enforcement_level: data.enforcement_level,
+        });
+      }
       this.flashMessages.success(
-        `${policyType.toUpperCase()} policy "${name}" was successfully ${isNew ? 'created' : 'updated'}.`
+        `${policyType.toUpperCase()} policy "${data.name}" was successfully ${
+          this.args.form.isNew ? 'created' : 'updated'
+        }.`
       );
-      this.args.onSave(this.args.model);
+
+      this.args.onSave(data);
     } catch (error) {
-      this.errorBanner = errorMessage(error);
+      const { message } = yield this.api.parseError(error);
+      this.errorBanner = message;
     }
   }
 
   @action
   setName(name: string) {
-    this.args.model.name = name.toLowerCase();
+    this.args.form.data.name = name.toLowerCase();
   }
 
   @action
   setPolicyFromFile(fileInfo: { value: string; filename: string }) {
     const { value, filename } = fileInfo;
     this.setPolicy(value);
-    if (!this.args.model.name) {
+    if (!this.args.form.data.name) {
       const trimmedFileName = trimRight(filename, ['.json', '.txt', '.hcl', '.policy']);
       this.setName(trimmedFileName);
     }
@@ -218,13 +232,6 @@ export default class PolicyFormComponent extends Component<Args> {
 
   @action
   setPolicy(policy: string) {
-    this.args.model.policy = policy;
-  }
-
-  @action
-  cancel() {
-    const method = this.args.model.isNew ? 'unloadRecord' : 'rollbackAttributes';
-    this.args.model[method]();
-    this.args.onCancel();
+    this.args.form.data.policy = policy;
   }
 }
