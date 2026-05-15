@@ -55,16 +55,31 @@ export default Controller.extend(ListController, BackendCrumbMixin, {
 
     delete(item) {
       const name = item.id;
-      item
-        .destroyRecord()
-        .then(() => {
-          this.flashMessages.success(`${name} was successfully deleted.`);
-          this.send('reload');
-        })
-        .catch((e) => {
-          const error = e.errors ? e.errors.join('. ') : e.message;
-          this.flashMessages.danger(error);
-        });
+      // Handle keymgmt keys (plain objects from API service)
+      if (this.backendType === 'keymgmt' && item.type === 'key') {
+        this.api.secrets
+          .keyManagementDeleteKey(name, item.backend)
+          .then(() => {
+            this.flashMessages.success(`${name} was successfully deleted.`);
+            this.send('reload');
+          })
+          .catch(async (e) => {
+            const { message } = await this.api.parseError(e);
+            this.flashMessages.danger(message);
+          });
+      } else {
+        // Handle Ember Data models
+        item
+          .destroyRecord()
+          .then(() => {
+            this.flashMessages.success(`${name} was successfully deleted.`);
+            this.send('reload');
+          })
+          .catch((e) => {
+            const error = e.errors ? e.errors.join('. ') : e.message;
+            this.flashMessages.danger(error);
+          });
+      }
     },
   },
 });
