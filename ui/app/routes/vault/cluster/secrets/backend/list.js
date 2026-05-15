@@ -17,6 +17,7 @@ import { getEffectiveEngineType } from 'vault/utils/external-plugin-helpers';
 import { getKeymgmtProviderIcon } from 'vault/utils/keymgmt-provider-utils';
 import { getModelTypeForEngine } from 'vault/utils/model-helpers/secret-engine-helpers';
 import { normalizePath } from 'vault/utils/path-encoding-helpers';
+import { resolve } from 'rsvp';
 import {
   SecretsApiKeyManagementListKeysListEnum,
   SecretsApiKeyManagementListKmsProvidersListEnum,
@@ -96,6 +97,11 @@ export default Route.extend({
       return this.router.transitionTo('vault.cluster.secrets.backend.kv.list', backend);
     }
     const modelType = this.getModelType(effectiveType, tab);
+    // Keymgmt routes use API-backed forms instead of Ember Data models, so skip model hydration.
+    if (effectiveType === 'keymgmt') {
+      return resolve();
+    }
+
     return this.pathHelp.hydrateModel(modelType, backend).then(() => {
       this.store.unloadAll('capabilities');
     });

@@ -111,7 +111,8 @@ export default Route.extend({
   buildModel(secret, queryParams) {
     const backend = getEnginePathParam(this);
     const modelType = this.modelType(backend, secret, { queryParams });
-    if (modelType === 'secret') {
+    // Keymgmt resources are loaded through API-backed forms, so Ember Data hydration is unnecessary.
+    if (modelType === 'secret' || modelType.startsWith('keymgmt/')) {
       return resolve();
     }
     return this.pathHelp.hydrateModel(modelType, backend);

@@ -61,7 +61,6 @@ module('Integration | Component | keymgmt/provider-edit', function (hooks) {
 
     this.capabilities = { canDelete: true, canListKeys: true, canEdit: false, canCreateKeys: false };
 
-    this.server.post('/sys/capabilities-self', () => ({}));
     this.server.get('/keymgmt/kms/foo-bar/key', () => {
       return {
         data: {
