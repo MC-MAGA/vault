@@ -13,6 +13,9 @@ import { keyIsFolder, parentKeyForKey } from 'core/utils/key-utils';
 import { getEffectiveEngineType } from 'vault/utils/external-plugin-helpers';
 import { getModelTypeForEngine } from 'vault/utils/model-helpers/secret-engine-helpers';
 import { getBackendEffectiveType, getEnginePathParam } from 'vault/utils/backend-route-helpers';
+import { isValidProvider } from 'vault/utils/keymgmt-provider-validator';
+import KeymgmtKeyForm from 'vault/forms/keymgmt/key';
+import { SecretsApiKeyManagementListKmsProvidersForKeyListEnum } from '@hashicorp/vault-client-typescript';
 
 /**
  * @type Class
@@ -21,6 +24,8 @@ export default Route.extend({
   store: service(),
   router: service(),
   pathHelp: service('path-help'),
+  api: service(),
+  capabilitiesService: service('capabilities'),
 
   secretParam() {
     const { secret } = this.paramsFor(this.routeName);
@@ -122,6 +127,129 @@ export default Route.extend({
     });
   },
 
+  async fetchKeyProvider(name, backend) {
+    try {
+      const providerResp = await this.api.secrets.keyManagementListKmsProvidersForKey(
+        name,
+        backend,
+        SecretsApiKeyManagementListKmsProvidersForKeyListEnum.TRUE
+      );
+      return providerResp.keys?.[0] || null;
+    } catch (e) {
+      const { status } = await this.api.parseError(e);
+      if (status === 403) {
+        return { permissionsError: true };
+      }
+      if (status === 404) {
+        return [];
+      }
+      throw e;
+    }
+  },
+
+  async fetchKeyDistribution(name, provider, backend) {
+    try {
+      const distResp = await this.api.secrets.keyManagementReadKeyInKmsProvider(name, provider, backend);
+      return {
+        ...distResp.data,
+        purposeArray: distResp.data?.purpose?.split(',') || [],
+      };
+    } catch (e) {
+      const { status } = await this.api.parseError(e);
+      // Return null for 403 - distribution is optional, no need for permissionsError like provider
+      if (status === 403) {
+        return null;
+      }
+      throw e;
+    }
+  },
+
+  buildKeyVersionsData(versions) {
+    let created = null;
+    let last_rotated = null;
+    let versionsArray = [];
+
+    if (versions) {
+      const versionKeys = Object.keys(versions);
+      if (versionKeys.length > 0) {
+        // This computes value of "created" from first version
+        const firstKey = versionKeys[0];
+        const firstVersion = versions[firstKey];
+        if (firstVersion?.creation_time) {
+          created = new Date(firstVersion.creation_time);
+        }
+
+        // This computes value of "last_rotated" from last version (if more than one)
+        if (versionKeys.length > 1) {
+          const lastKey = versionKeys[versionKeys.length - 1];
+          const lastVersion = versions[lastKey];
+          if (lastVersion?.creation_time) {
+            last_rotated = new Date(lastVersion.creation_time);
+          }
+        }
+
+        versionsArray = versionKeys
+          .map((key) => {
+            const version = versions[key];
+            if (!version?.creation_time) return null;
+            return {
+              ...version,
+              id: parseInt(key, 10),
+            };
+          })
+          .filter((v) => v !== null);
+      }
+    }
+
+    return { created, last_rotated, versions: versionsArray };
+  },
+
+  async fetchKeymgmtKey(backend, name) {
+    const { data } = await this.api.secrets.keyManagementReadKey(name, backend);
+
+    const provider = await this.fetchKeyProvider(name, backend);
+
+    let distribution = null;
+    if (isValidProvider(provider)) {
+      distribution = await this.fetchKeyDistribution(name, provider, backend);
+    }
+
+    // This builds computed version data.
+    const { created, last_rotated, versions } = this.buildKeyVersionsData(data.versions);
+
+    const form = new KeymgmtKeyForm(
+      {
+        ...data,
+        name,
+        backend,
+        provider,
+        distribution,
+        created,
+        last_rotated,
+        versions,
+      },
+      { isNew: false }
+    );
+    return form;
+  },
+
+  async fetchKeymgmtKeyCapabilities(backend, name) {
+    const keyPath = this.capabilitiesService.pathFor('keymgmtKey', { backend, name });
+    const keysPath = this.capabilitiesService.pathFor('keymgmtKeys', { backend });
+    const keyProvidersPath = this.capabilitiesService.pathFor('keymgmtKeyProviders', { backend, name });
+
+    const capabilities = await this.capabilitiesService.fetch([keyPath, keysPath, keyProvidersPath]);
+
+    return {
+      canDelete: capabilities[keyPath]?.canDelete,
+      canUpdate: capabilities[keyPath]?.canUpdate,
+      canEdit: capabilities[keyPath]?.canUpdate,
+      canRead: capabilities[keyPath]?.canRead,
+      canList: capabilities[keysPath]?.canList,
+      canListProviders: capabilities[keyProvidersPath]?.canList,
+    };
+  },
+
   async handleSecretModelError(capabilitiesPromise, secretId, modelType, error) {
     // capabilities is a promise proxy, not a real object
     // to work around this we explicitly assign it to a const and await it
@@ -158,20 +286,28 @@ export default Route.extend({
       secret = secret.replace('role/', '');
     }
     let secretModel;
+    let capabilities;
 
-    const capabilities = this.capabilities(secret, modelType);
-    try {
-      secretModel = await this.store.queryRecord(modelType, { id: secret, backend, type });
-    } catch (err) {
-      // we've failed the read request, but if it's a kv-v1 type backend, we want to
-      // do additional checks of the capabilities
-      if (err.httpStatus === 403 && modelType === 'secret') {
-        secretModel = await this.handleSecretModelError(capabilities, secret, modelType, err);
-      } else {
-        throw err;
+    // Handle keymgmt/key with API service
+    if (modelType === 'keymgmt/key') {
+      secretModel = await this.fetchKeymgmtKey(backend, secret);
+      const caps = await this.fetchKeymgmtKeyCapabilities(backend, secret);
+      capabilities = caps;
+    } else {
+      capabilities = this.capabilities(secret, modelType);
+      try {
+        secretModel = await this.store.queryRecord(modelType, { id: secret, backend, type });
+      } catch (err) {
+        // we've failed the read request, but if it's a kv-v1 type backend, we want to
+        // do additional checks of the capabilities
+        if (err.httpStatus === 403 && modelType === 'secret') {
+          secretModel = await this.handleSecretModelError(capabilities, secret, modelType, err);
+        } else {
+          throw err;
+        }
       }
+      await capabilities;
     }
-    await capabilities;
 
     return {
       secret: secretModel,
@@ -187,13 +323,20 @@ export default Route.extend({
       /* eslint-disable-next-line ember/no-controller-access-in-routes */
       this.controllerFor('vault.cluster.secrets.backend').preferAdvancedEdit || false;
     const backendType = this.backendType();
-    model.secret.setProperties({ backend });
+    const mode = this.routeName.split('.').pop().replace('-root', '');
+
+    // Handle keymgmt/key differently - Resource or Form doesn't have setProperties
+    const modelType = this.modelType(backend, secret);
+    if (modelType !== 'keymgmt/key') {
+      model.secret.setProperties({ backend });
+    }
+
     controller.setProperties({
       model: model.secret,
+      form: modelType === 'keymgmt/key' ? model.secret : null,
       capabilities: model.capabilities,
       baseKey: { id: secret },
-      // mode will be 'show', 'edit', 'create'
-      mode: this.routeName.split('.').pop().replace('-root', ''),
+      mode,
       backend,
       preferAdvancedEdit,
       backendType,

@@ -6,16 +6,9 @@
 import Model, { attr } from '@ember-data/model';
 import { expandAttributeMeta } from 'vault/utils/field-to-attrs';
 import lazyCapabilities, { apiPath } from 'vault/macros/lazy-capabilities';
+import { KeyManagementUpdateKeyRequestTypeEnum } from '@hashicorp/vault-client-typescript';
 
-export const KEY_TYPES = [
-  'aes256-gcm96',
-  'rsa-2048',
-  'rsa-3072',
-  'rsa-4096',
-  'ecdsa-p256',
-  'ecdsa-p384',
-  'ecdsa-p521',
-];
+const KEY_TYPES = Object.values(KeyManagementUpdateKeyRequestTypeEnum);
 export default class KeymgmtKeyModel extends Model {
   @attr('string', {
     label: 'Key name',

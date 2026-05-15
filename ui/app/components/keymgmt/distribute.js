@@ -7,9 +7,11 @@ import Component from '@glimmer/component';
 import { action } from '@ember/object';
 import { service } from '@ember/service';
 import { tracked } from '@glimmer/tracking';
-import { KEY_TYPES } from '../../models/keymgmt/key';
 import { task } from 'ember-concurrency';
 import { waitFor } from '@ember/test-waiters';
+import { KeyManagementUpdateKeyRequestTypeEnum } from '@hashicorp/vault-client-typescript';
+
+const KEY_TYPES = Object.values(KeyManagementUpdateKeyRequestTypeEnum);
 
 /**
  * @module KeymgmtDistribute
@@ -37,8 +39,8 @@ const VALID_TYPES_BY_PROVIDER = {
   azurekeyvault: ['rsa-2048', 'rsa-3072', 'rsa-4096'],
 };
 export default class KeymgmtDistribute extends Component {
-  @service pagination;
   @service store;
+  @service api;
   @service flashMessages;
   @service router;
 
@@ -122,29 +124,25 @@ export default class KeymgmtDistribute extends Component {
   }
 
   async getKeyInfo(keyName, isNew = false) {
-    let key;
     if (isNew) {
       this.isNewKey = true;
-      key = this.store.createRecord(`keymgmt/key`, {
+      this.keyModel = {
         backend: this.args.backend,
-        id: keyName,
         name: keyName,
-      });
+        type: null,
+      };
     } else {
-      key = await this.store
-        .queryRecord(`keymgmt/key`, {
-          backend: this.args.backend,
-          id: keyName,
-          recordOnly: true,
-        })
-        .catch(() => {
-          // Key type isn't essential for distributing, so if
-          // we can't read it for some reason swallow the error
-          // and allow the API to respond with any key/provider
-          // type matching errors
-        });
+      try {
+        const { data } = await this.api.secrets.keyManagementReadKey(keyName, this.args.backend);
+        this.keyModel = { ...data, name: keyName, backend: this.args.backend };
+      } catch (error) {
+        // Key type isn't essential for distributing, so if
+        // we can't read it for some reason swallow the error
+        // and allow the API to respond with any key/provider
+        // type matching errors
+        this.keyModel = null;
+      }
     }
-    this.keyModel = key;
   }
 
   async getProviderType(id) {
@@ -163,12 +161,6 @@ export default class KeymgmtDistribute extends Component {
   }
 
   destroyKey() {
-    if (this.isNewKey) {
-      // Delete record from store if it was created here
-      this.keyModel.destroyRecord().finally(() => {
-        this.keyModel = null;
-      });
-    }
     this.isNewKey = false;
     this.keyModel = null;
   }
@@ -184,22 +176,19 @@ export default class KeymgmtDistribute extends Component {
     return { key, provider, purpose: operations.join(','), protection };
   }
 
-  distributeKey(backend, data) {
-    const adapter = this.store.adapterFor('keymgmt/key');
+  async distributeKey(backend, data) {
     const { key, provider, purpose, protection } = data;
-    return adapter
-      .distribute(backend, provider, key, { purpose, protection })
-      .then(() => {
-        this.flashMessages.success(`Successfully distributed key ${key} to ${provider}`);
-        // update keys on provider model
-        this.pagination.clearDataset('keymgmt/key');
-        const providerModel = this.store.peekRecord('keymgmt/provider', provider);
-        providerModel.fetchKeys(providerModel.keys?.meta?.currentPage || 1);
-        this.args.onClose();
-      })
-      .catch((e) => {
-        this.formErrors = `${e.errors}`;
+    try {
+      await this.api.secrets.keyManagementDistributeKeyInKmsProvider(key, provider, backend, {
+        purpose,
+        protection,
       });
+      this.flashMessages.success(`Successfully distributed key ${key} to ${provider}`);
+      this.args.onClose();
+    } catch (error) {
+      const { message } = await this.api.parseError(error);
+      this.formErrors = message;
+    }
   }
 
   @action
@@ -216,7 +205,9 @@ export default class KeymgmtDistribute extends Component {
   }
   @action
   handleKeyType(evt) {
-    this.keyModel.set('type', evt.target.value);
+    if (this.keyModel) {
+      this.keyModel = { ...this.keyModel, type: evt.target.value };
+    }
   }
 
   @action
@@ -254,18 +245,16 @@ export default class KeymgmtDistribute extends Component {
     }
     if (this.isNewKey) {
       try {
-        yield this.keyModel.save();
+        // Create the key first
+        const keyData = { type: this.keyModel.type };
+        yield this.api.secrets.keyManagementUpdateKey(this.keyModel.name, backend, keyData);
         this.flashMessages.success(`Successfully created key ${this.keyModel.name}`);
-      } catch (e) {
-        this.flashMessages.danger(`Error creating new key ${this.keyModel.name}: ${e.errors}`);
+      } catch (error) {
+        const { message } = yield this.api.parseError(error);
+        this.flashMessages.danger(`Error creating new key ${this.keyModel.name}: ${message}`);
         return;
       }
     }
     yield this.distributeKey(backend, data);
-    // Reload key to get dist info
-    yield this.store.queryRecord(`keymgmt/key`, {
-      backend: this.args.backend,
-      id: this.keyModel.name,
-    });
   }
 }

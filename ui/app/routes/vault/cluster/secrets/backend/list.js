@@ -8,14 +8,15 @@ import { set } from '@ember/object';
 import Route from '@ember/routing/route';
 import { service } from '@ember/service';
 import { filterEnginesByMountCategory, isAddonEngine } from 'core/utils/all-engines-metadata';
+import { paginate } from 'core/utils/paginate-list';
 import { pathIsDirectory } from 'kv/utils/kv-breadcrumbs';
-import { hash } from 'rsvp';
 import engineDisplayData from 'vault/helpers/engines-display-data';
 import { supportedSecretBackends } from 'vault/helpers/supported-secret-backends';
 import { getEnginePathParam } from 'vault/utils/backend-route-helpers';
 import { getEffectiveEngineType } from 'vault/utils/external-plugin-helpers';
 import { getModelTypeForEngine } from 'vault/utils/model-helpers/secret-engine-helpers';
 import { normalizePath } from 'vault/utils/path-encoding-helpers';
+import { SecretsApiKeyManagementListKeysListEnum } from '@hashicorp/vault-client-typescript';
 
 const SUPPORTED_BACKENDS = supportedSecretBackends();
 
@@ -36,6 +37,8 @@ function getValidPage(pageParam) {
 export default Route.extend({
   pagination: service(),
   store: service(),
+  api: service(),
+  capabilitiesService: service('capabilities'),
   templateName: 'vault/cluster/secrets/backend/list',
   pathHelp: service('path-help'),
   router: service(),
@@ -98,6 +101,51 @@ export default Route.extend({
     return getModelTypeForEngine(type, { tab });
   },
 
+  async fetchKeysWithCapabilities(backend) {
+    const { keys } = await this.api.secrets.keyManagementListKeys(
+      backend,
+      SecretsApiKeyManagementListKeysListEnum.TRUE
+    );
+
+    // Fetch capabilities for all keys
+    const pathsToFetch = (keys || []).flatMap((keyName) => {
+      const keyPath = this.capabilitiesService.pathFor('keymgmtKey', { backend, name: keyName });
+      return [keyPath];
+    });
+
+    const capabilities = await this.capabilitiesService.fetch(pathsToFetch);
+
+    // Transform string array into objects for list display with capabilities
+    const keysList = (keys || []).map((keyName) => {
+      const keyPath = this.capabilitiesService.pathFor('keymgmtKey', { backend, name: keyName });
+      return {
+        id: keyName,
+        name: keyName,
+        backend,
+        icon: 'key',
+        type: 'key',
+        canRead: capabilities[keyPath]?.canRead || false,
+        canEdit: capabilities[keyPath]?.canUpdate || false,
+        canDelete: capabilities[keyPath]?.canDelete || false,
+      };
+    });
+
+    return { keysList, capabilities };
+  },
+
+  async fetchKeymgmtKeys(backend, page, pageFilter) {
+    try {
+      const { keysList } = await this.fetchKeysWithCapabilities(backend);
+      return paginate(keysList, { page, filter: pageFilter });
+    } catch (error) {
+      const { status } = await this.api.parseError(error);
+      if (status === 404) {
+        return [];
+      }
+      throw error;
+    }
+  },
+
   async model(params) {
     const secret = this.secretParam() || '';
     const backend = getEnginePathParam(this);
@@ -105,29 +153,36 @@ export default Route.extend({
     const effectiveType = getEffectiveEngineType(backendModel.engineType);
     const modelType = this.getModelType(effectiveType, params.tab);
 
-    return hash({
-      secret,
-      secrets: this.pagination
-        .lazyPaginatedQuery(modelType, {
+    // Handle keymgmt keys with API service
+    const isKeymgmtKeys = effectiveType === 'keymgmt' && params.tab !== 'provider';
+
+    let secrets;
+    if (isKeymgmtKeys) {
+      secrets = await this.fetchKeymgmtKeys(backend, getValidPage(params.page), params.pageFilter);
+      this.set('has404', false);
+    } else {
+      try {
+        secrets = await this.pagination.lazyPaginatedQuery(modelType, {
           id: secret,
           backend,
           responsePath: 'data.keys',
           page: getValidPage(params.page),
           pageFilter: params.pageFilter,
-        })
-        .then((model) => {
-          this.set('has404', false);
-          return model;
-        })
-        .catch((err) => {
-          if (backendModel && err.httpStatus === 404) {
-            return [];
-          } else {
-            // else we're throwing and dealing with this in the error action
-            throw err;
-          }
-        }),
-    });
+        });
+        this.set('has404', false);
+      } catch (err) {
+        if (backendModel && err.httpStatus === 404) {
+          secrets = [];
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    return {
+      secret,
+      secrets,
+    };
   },
 
   setupController(controller, resolvedModel) {
