@@ -9,7 +9,7 @@ import { action } from '@ember/object';
 import { tracked } from '@glimmer/tracking';
 import { task } from 'ember-concurrency';
 import { waitFor } from '@ember/test-waiters';
-import { isValidProvider } from 'vault/utils/keymgmt-provider-validator';
+import { isValidProvider } from 'vault/utils/keymgmt-provider-utils';
 
 /**
  * @module KeymgmtKeyEdit

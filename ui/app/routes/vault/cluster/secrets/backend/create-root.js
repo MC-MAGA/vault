@@ -7,6 +7,7 @@ import { hash } from 'rsvp';
 import { service } from '@ember/service';
 import EditBase from './secret-edit';
 import KeymgmtKeyForm from 'vault/forms/keymgmt/key';
+import KeymgmtProviderForm from 'vault/forms/keymgmt/provider';
 import { KeyManagementUpdateKeyRequestTypeEnum } from '@hashicorp/vault-client-typescript';
 
 const secretModel = (store, backend, key) => {
@@ -38,6 +39,14 @@ export default EditBase.extend({
         deletion_allowed: false,
       };
       return new KeymgmtKeyForm(defaultValues, { isNew: true });
+    }
+
+    if (modelType === 'keymgmt/provider') {
+      const defaultValues = {
+        backend,
+        credentials: {},
+      };
+      return new KeymgmtProviderForm(defaultValues, { isNew: true });
     }
 
     if (modelType === 'role-ssh') {
