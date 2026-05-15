@@ -14,9 +14,13 @@ import engineDisplayData from 'vault/helpers/engines-display-data';
 import { supportedSecretBackends } from 'vault/helpers/supported-secret-backends';
 import { getEnginePathParam } from 'vault/utils/backend-route-helpers';
 import { getEffectiveEngineType } from 'vault/utils/external-plugin-helpers';
+import { getKeymgmtProviderIcon } from 'vault/utils/keymgmt-provider-utils';
 import { getModelTypeForEngine } from 'vault/utils/model-helpers/secret-engine-helpers';
 import { normalizePath } from 'vault/utils/path-encoding-helpers';
-import { SecretsApiKeyManagementListKeysListEnum } from '@hashicorp/vault-client-typescript';
+import {
+  SecretsApiKeyManagementListKeysListEnum,
+  SecretsApiKeyManagementListKmsProvidersListEnum,
+} from '@hashicorp/vault-client-typescript';
 
 const SUPPORTED_BACKENDS = supportedSecretBackends();
 
@@ -146,6 +150,60 @@ export default Route.extend({
     }
   },
 
+  async fetchProvidersWithCapabilities(backend) {
+    const { keys: providerNames } = await this.api.secrets.keyManagementListKmsProviders(
+      backend,
+      SecretsApiKeyManagementListKmsProvidersListEnum.TRUE
+    );
+
+    const providersWithData = await Promise.all(
+      (providerNames || []).map(async (providerName) => {
+        const { data } = await this.api.secrets.keyManagementReadKmsProvider(providerName, backend);
+        return {
+          ...data,
+          id: providerName,
+          name: providerName,
+          backend,
+          type: 'provider',
+          icon: getKeymgmtProviderIcon(data.provider),
+        };
+      })
+    );
+
+    const pathsToFetch = providersWithData.map((provider) =>
+      this.capabilitiesService.pathFor('keymgmtProvider', { backend, id: provider.id })
+    );
+    const capabilities = await this.capabilitiesService.fetch(pathsToFetch);
+
+    const providersList = providersWithData.map((provider) => {
+      const providerPath = this.capabilitiesService.pathFor('keymgmtProvider', {
+        backend,
+        id: provider.id,
+      });
+      return {
+        ...provider,
+        canRead: capabilities[providerPath]?.canRead || false,
+        canEdit: capabilities[providerPath]?.canUpdate || false,
+        canDelete: capabilities[providerPath]?.canDelete || false,
+      };
+    });
+
+    return { providersList, capabilities };
+  },
+
+  async fetchKeymgmtProviders(backend, page, pageFilter) {
+    try {
+      const { providersList } = await this.fetchProvidersWithCapabilities(backend);
+      return paginate(providersList, { page, filter: pageFilter });
+    } catch (error) {
+      const { status } = await this.api.parseError(error);
+      if (status === 404) {
+        return [];
+      }
+      throw error;
+    }
+  },
+
   async model(params) {
     const secret = this.secretParam() || '';
     const backend = getEnginePathParam(this);
@@ -154,11 +212,15 @@ export default Route.extend({
     const modelType = this.getModelType(effectiveType, params.tab);
 
     // Handle keymgmt keys with API service
-    const isKeymgmtKeys = effectiveType === 'keymgmt' && params.tab !== 'provider';
-
     let secrets;
-    if (isKeymgmtKeys) {
-      secrets = await this.fetchKeymgmtKeys(backend, getValidPage(params.page), params.pageFilter);
+    if (effectiveType === 'keymgmt') {
+      const page = getValidPage(params.page);
+      const filter = params.pageFilter;
+      secrets =
+        params.tab === 'provider'
+          ? await this.fetchKeymgmtProviders(backend, page, filter)
+          : await this.fetchKeymgmtKeys(backend, page, filter);
+
       this.set('has404', false);
     } else {
       try {

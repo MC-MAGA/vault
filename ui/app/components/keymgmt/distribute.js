@@ -9,7 +9,11 @@ import { service } from '@ember/service';
 import { tracked } from '@glimmer/tracking';
 import { task } from 'ember-concurrency';
 import { waitFor } from '@ember/test-waiters';
-import { KeyManagementUpdateKeyRequestTypeEnum } from '@hashicorp/vault-client-typescript';
+import {
+  KeyManagementUpdateKeyRequestTypeEnum,
+  SecretsApiKeyManagementListKeysListEnum,
+  SecretsApiKeyManagementListKmsProvidersListEnum,
+} from '@hashicorp/vault-client-typescript';
 
 const KEY_TYPES = Object.values(KeyManagementUpdateKeyRequestTypeEnum);
 
@@ -21,7 +25,7 @@ const KEY_TYPES = Object.values(KeyManagementUpdateKeyRequestTypeEnum);
  * ```js
  * <KeymgmtDistribute @backend="keymgmt" @key="my-key" @provider="my-kms" />
  * ```
- * @param {string} backend - name of backend, which will be the basis of other store queries
+ * @param {string} backend - name of backend, which is used in API requests
  * @param {string} [key] - key is the name of the existing key which is being distributed. Will hide the key field in UI
  * @param {string} [provider] - provider is the name of the existing provider which is being distributed to. Will hide the provider field in UI
  */
@@ -39,14 +43,16 @@ const VALID_TYPES_BY_PROVIDER = {
   azurekeyvault: ['rsa-2048', 'rsa-3072', 'rsa-4096'],
 };
 export default class KeymgmtDistribute extends Component {
-  @service store;
   @service api;
   @service flashMessages;
-  @service router;
 
   @tracked keyModel;
   @tracked isNewKey = false;
+  @tracked keyOptions = [];
+  @tracked canListKeys = true;
   @tracked providerType;
+  @tracked providerOptions = [];
+  @tracked canListProviders = true;
   @tracked formData;
   @tracked formErrors;
 
@@ -59,9 +65,13 @@ export default class KeymgmtDistribute extends Component {
     // Side effects to get types of key or provider passed in
     if (this.args.provider) {
       this.getProviderType(this.args.provider);
+    } else {
+      this.fetchProviderOptions();
     }
     if (this.args.key) {
       this.getKeyInfo(this.args.key);
+    } else {
+      this.fetchKeyOptions();
     }
     this.formData.operations = [];
   }
@@ -145,19 +155,52 @@ export default class KeymgmtDistribute extends Component {
     }
   }
 
+  async fetchKeyOptions() {
+    try {
+      const { keys } = await this.api.secrets.keyManagementListKeys(
+        this.args.backend,
+        SecretsApiKeyManagementListKeysListEnum.TRUE
+      );
+      this.keyOptions = (keys || []).map((name) => ({ id: name, name }));
+      this.canListKeys = true;
+    } catch (error) {
+      const { status } = await this.api.parseError(error);
+      if (status === 403) {
+        this.canListKeys = false;
+      }
+      this.keyOptions = [];
+    }
+  }
+
   async getProviderType(id) {
     if (!id) {
       this.providerType = '';
       return;
     }
 
-    const provider = await this.store
-      .queryRecord('keymgmt/provider', {
-        backend: this.args.backend,
-        id,
-      })
-      .catch(() => {});
-    this.providerType = provider?.provider;
+    try {
+      const { data } = await this.api.secrets.keyManagementReadKmsProvider(id, this.args.backend);
+      this.providerType = data.provider;
+    } catch {
+      this.providerType = '';
+    }
+  }
+
+  async fetchProviderOptions() {
+    try {
+      const { keys } = await this.api.secrets.keyManagementListKmsProviders(
+        this.args.backend,
+        SecretsApiKeyManagementListKmsProvidersListEnum.TRUE
+      );
+      this.providerOptions = (keys || []).map((name) => ({ id: name, name }));
+      this.canListProviders = true;
+    } catch (error) {
+      const { status } = await this.api.parseError(error);
+      if (status === 403) {
+        this.canListProviders = false;
+      }
+      this.providerOptions = [];
+    }
   }
 
   destroyKey() {
@@ -224,13 +267,33 @@ export default class KeymgmtDistribute extends Component {
 
   @action
   async handleKeySelect(selected) {
-    const selectedKey = selected[0] || null;
-    if (!selectedKey) {
+    let keyName;
+    let isNew = false;
+
+    if (typeof selected === 'string') {
+      keyName = selected;
+    } else if (Array.isArray(selected)) {
+      const selectedKey = selected[0] || null;
+      if (!selectedKey) {
+        this.formData.key = null;
+        return this.destroyKey();
+      }
+
+      if (typeof selectedKey === 'string') {
+        keyName = selectedKey;
+      } else {
+        keyName = selectedKey.id;
+        isNew = !!selectedKey.isNew;
+      }
+    }
+
+    if (!keyName) {
       this.formData.key = null;
       return this.destroyKey();
     }
-    this.formData.key = selectedKey.id;
-    return this.getKeyInfo(selectedKey.id, selectedKey.isNew);
+
+    this.formData.key = keyName;
+    return this.getKeyInfo(keyName, isNew);
   }
 
   @task

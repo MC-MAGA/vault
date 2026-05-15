@@ -13,8 +13,9 @@ import { keyIsFolder, parentKeyForKey } from 'core/utils/key-utils';
 import { getEffectiveEngineType } from 'vault/utils/external-plugin-helpers';
 import { getModelTypeForEngine } from 'vault/utils/model-helpers/secret-engine-helpers';
 import { getBackendEffectiveType, getEnginePathParam } from 'vault/utils/backend-route-helpers';
-import { isValidProvider } from 'vault/utils/keymgmt-provider-validator';
+import { isValidProvider } from 'vault/utils/keymgmt-provider-utils';
 import KeymgmtKeyForm from 'vault/forms/keymgmt/key';
+import KeymgmtProviderForm from 'vault/forms/keymgmt/provider';
 import { SecretsApiKeyManagementListKmsProvidersForKeyListEnum } from '@hashicorp/vault-client-typescript';
 
 /**
@@ -250,6 +251,44 @@ export default Route.extend({
     };
   },
 
+  async fetchKeymgmtProvider(backend, name) {
+    const { data } = await this.api.secrets.keyManagementReadKmsProvider(name, backend);
+
+    const form = new KeymgmtProviderForm(
+      {
+        ...data,
+        name,
+        backend,
+        keys: [],
+      },
+      { isNew: false }
+    );
+
+    return form;
+  },
+
+  async fetchKeymgmtProviderCapabilities(backend, name) {
+    const providerPath = this.capabilitiesService.pathFor('keymgmtProvider', { backend, id: name });
+    const providersPath = this.capabilitiesService.pathFor('keymgmtProviders', { backend });
+    const providerKeysPath = this.capabilitiesService.pathFor('keymgmtProviderKeys', { backend, id: name });
+
+    const capabilities = await this.capabilitiesService.fetch([
+      providerPath,
+      providersPath,
+      providerKeysPath,
+    ]);
+
+    return {
+      canDelete: capabilities[providerPath]?.canDelete,
+      canUpdate: capabilities[providerPath]?.canUpdate,
+      canEdit: capabilities[providerPath]?.canUpdate,
+      canRead: capabilities[providerPath]?.canRead,
+      canList: capabilities[providersPath]?.canList,
+      canListKeys: capabilities[providerKeysPath]?.canList,
+      canCreateKeys: capabilities[providerKeysPath]?.canCreate,
+    };
+  },
+
   async handleSecretModelError(capabilitiesPromise, secretId, modelType, error) {
     // capabilities is a promise proxy, not a real object
     // to work around this we explicitly assign it to a const and await it
@@ -288,10 +327,14 @@ export default Route.extend({
     let secretModel;
     let capabilities;
 
-    // Handle keymgmt/key with API service
+    // Handle keymgmt resources with API service
     if (modelType === 'keymgmt/key') {
       secretModel = await this.fetchKeymgmtKey(backend, secret);
       const caps = await this.fetchKeymgmtKeyCapabilities(backend, secret);
+      capabilities = caps;
+    } else if (modelType === 'keymgmt/provider') {
+      secretModel = await this.fetchKeymgmtProvider(backend, secret);
+      const caps = await this.fetchKeymgmtProviderCapabilities(backend, secret);
       capabilities = caps;
     } else {
       capabilities = this.capabilities(secret, modelType);
@@ -325,15 +368,15 @@ export default Route.extend({
     const backendType = this.backendType();
     const mode = this.routeName.split('.').pop().replace('-root', '');
 
-    // Handle keymgmt/key differently - Resource or Form doesn't have setProperties
+    // Handle keymgmt forms differently - Resource or Form doesn't have setProperties
     const modelType = this.modelType(backend, secret);
-    if (modelType !== 'keymgmt/key') {
+    if (!['keymgmt/key', 'keymgmt/provider'].includes(modelType)) {
       model.secret.setProperties({ backend });
     }
 
     controller.setProperties({
       model: model.secret,
-      form: modelType === 'keymgmt/key' ? model.secret : null,
+      form: ['keymgmt/key', 'keymgmt/provider'].includes(modelType) ? model.secret : null,
       capabilities: model.capabilities,
       baseKey: { id: secret },
       mode,

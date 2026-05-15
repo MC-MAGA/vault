@@ -53,20 +53,27 @@ export default Controller.extend(ListController, BackendCrumbMixin, {
         });
     },
 
-    delete(item) {
+    async delete(item) {
       const name = item.id;
-      // Handle keymgmt keys (plain objects from API service)
+      // Handle keymgmt list items (plain objects from API service)
       if (this.backendType === 'keymgmt' && item.type === 'key') {
-        this.api.secrets
-          .keyManagementDeleteKey(name, item.backend)
-          .then(() => {
-            this.flashMessages.success(`${name} was successfully deleted.`);
-            this.send('reload');
-          })
-          .catch(async (e) => {
-            const { message } = await this.api.parseError(e);
-            this.flashMessages.danger(message);
-          });
+        try {
+          await this.api.secrets.keyManagementDeleteKey(name, item.backend);
+          this.flashMessages.success(`${name} was successfully deleted.`);
+          this.send('reload');
+        } catch (e) {
+          const { message } = await this.api.parseError(e);
+          this.flashMessages.danger(message);
+        }
+      } else if (this.backendType === 'keymgmt' && item.type === 'provider') {
+        try {
+          await this.api.secrets.keyManagementDeleteKmsProvider(name, item.backend);
+          this.flashMessages.success(`${name} was successfully deleted.`);
+          this.send('reload');
+        } catch (e) {
+          const { message } = await this.api.parseError(e);
+          this.flashMessages.danger(message);
+        }
       } else {
         // Handle Ember Data models
         item
